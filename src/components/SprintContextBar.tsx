@@ -5,7 +5,9 @@ import { db } from "@/lib/db";
 export function SprintContextBar() {
     const { isLoading, data } = db.useQuery({
         sprints: {},
-        tasks: {},
+        tasks: {
+            sprint: {}
+        },
     });
 
     if (isLoading) return null;
@@ -14,18 +16,16 @@ export function SprintContextBar() {
     const allTasks = data?.tasks || [];
 
     const activeSprint = sprints.find((s: any) => s.status === "active") ||
-        sprints.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+        sprints.sort((a: any) => (a.createdAt || 0))[0];
 
     if (!activeSprint) return null;
 
-    const sprintTasks = allTasks.filter((t: any) => t.sprintId === activeSprint.id);
+    const sprintTasks = allTasks.filter((t: any) => t.sprint?.id === activeSprint.id);
     const totalPoints = sprintTasks.reduce((s: number, t: any) => s + (t.storyPoints || 3), 0);
     const capacity = activeSprint.capacity || 0;
 
-    // progress
-    const doneTasks = sprintTasks.filter((t: any) => t.status === "done").length;
-    const totalTasks = sprintTasks.length;
-    const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+    const donePoints = sprintTasks.filter((t: any) => t.status === "done").reduce((s: number, t: any) => s + (t.storyPoints || 3), 0);
+    const progress = totalPoints > 0 ? Math.round((donePoints / totalPoints) * 100) : 0;
 
     // Timeline calculations
     const today = new Date();
@@ -118,7 +118,7 @@ export function SprintContextBar() {
                 <div style={{ flex: 1, maxWidth: 200 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
                         <span>Task Progress</span>
-                        <span>{doneTasks}/{totalTasks} done</span>
+                        <span>{donePoints}/{totalPoints} pts</span>
                     </div>
                     <div style={{ height: 6, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${progress}%`, background: "var(--color-indigo)", borderRadius: 3 }} />

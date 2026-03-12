@@ -30,7 +30,10 @@ export default function ProjectsPage() {
 
     const { isLoading, data } = db.useQuery({
         projects: { meetings: {} },
-        tasks: {},
+        tasks: {
+            project: {},
+            assignees: {}
+        },
         profiles: {},
         sprints: {},
     });
@@ -81,8 +84,8 @@ export default function ProjectsPage() {
         const txs: any[] = [];
         // Cascade delete linked meetings
         // We DO NOT delete sprints here since they are global
-        // Delete tasks that belong to this project (by projectId field)
-        const projectRelatedTasks = allTasks.filter((t: any) => t.projectId === projectToDelete.id);
+        // Delete tasks that belong to this project
+        const projectRelatedTasks = allTasks.filter((t: any) => t.project?.id === projectToDelete.id);
         projectRelatedTasks.forEach((task: any) => txs.push(db.tx.tasks[task.id].delete()));
         if (projectToDelete.meetings) {
             projectToDelete.meetings.forEach((meeting: any) => txs.push(db.tx.meetings[meeting.id].delete()));
@@ -136,16 +139,15 @@ export default function ProjectsPage() {
             ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
                     {projects.map((project: any) => {
-                        const projectTasks = allTasks.filter((t: any) => t.projectId === project.id);
+                        const projectTasks = allTasks.filter((t: any) => t.project?.id === project.id);
                         const totalTasks = projectTasks.length;
                         const doneTasks = projectTasks.filter((t: any) => t.status === "done").length;
                         const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
                         const assigneesMap: Record<string, any> = {};
                         projectTasks.forEach((t: any) => {
-                            if (t.assigneeId) {
-                                const profile = allProfiles.find((p: any) => p.id === t.assigneeId);
-                                if (profile) assigneesMap[profile.id] = profile;
+                            if (t.assignees) {
+                                t.assignees.forEach((a: any) => assigneesMap[a.id] = a);
                             }
                         });
                         const assignees = Object.values(assigneesMap);

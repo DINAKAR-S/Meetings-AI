@@ -24,13 +24,18 @@ export default function ProjectBacklogPage({ params }: { params: Promise<{ proje
     const { isLoading, data } = db.useQuery({
         projects: {},
         sprints: {},
-        tasks: {},
+        tasks: {
+            sprint: {},
+            assignees: {},
+            project: {},
+            assignedTeam: {}
+        },
         profiles: {},
         teams: { members: {} }
     });
 
     const project = data?.projects?.find((p: any) => p.id === projectId);
-    const allTasks = (data?.tasks || []).filter((t: any) => t.projectId === projectId);
+    const allTasks = (data?.tasks || []).filter((t: any) => t.project?.id === projectId);
 
     // True backlog: tasks not in any sprint
     const tasks = allTasks;
@@ -41,8 +46,8 @@ export default function ProjectBacklogPage({ params }: { params: Promise<{ proje
 
     const filteredTasks = tasks.filter((t: any) => {
         if (filterStatus !== "all" && t.status !== filterStatus) return false;
-        if (filterSprint === "__backlog__" && t.sprintId) return false;
-        if (filterSprint !== "all" && filterSprint !== "__backlog__" && t.sprintId !== filterSprint) return false;
+        if (filterSprint === "__backlog__" && t.sprint) return false;
+        if (filterSprint !== "all" && filterSprint !== "__backlog__" && t.sprint?.id !== filterSprint) return false;
         return true;
     });
 
@@ -67,7 +72,7 @@ export default function ProjectBacklogPage({ params }: { params: Promise<{ proje
     const handleAssignToSprint = () => {
         if (selectedTaskIds.size === 0 || !selectedSprintId) return;
         const txs = Array.from(selectedTaskIds).map(taskId =>
-            db.tx.tasks[taskId].update({ sprintId: selectedSprintId })
+            db.tx.tasks[taskId].link({ sprint: selectedSprintId })
         );
         db.transact(txs);
         showToast(`${selectedTaskIds.size} task(s) added to sprint`);
@@ -118,7 +123,7 @@ export default function ProjectBacklogPage({ params }: { params: Promise<{ proje
                         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{project.name} — Backlog</h2>
                         <div style={{ display: "flex", gap: 20, marginTop: 8, fontSize: 12, color: "var(--text-secondary)" }}>
                             <span><strong>{filteredTasks.length}</strong> {filterSprint === '__backlog__' ? 'backlog ' : ''}tasks</span>
-                            {filterSprint === '__backlog__' && <span><strong>{allTasks.length - tasks.filter((t: any) => !t.sprintId).length}</strong> in sprints</span>}
+                            {filterSprint === '__backlog__' && <span><strong>{allTasks.length - tasks.filter((t: any) => !t.sprint).length}</strong> in sprints</span>}
                             <span><strong>{doneTasks}</strong> done</span>
                             <span><strong>{totalPoints}</strong> total points</span>
                         </div>
@@ -234,23 +239,18 @@ export default function ProjectBacklogPage({ params }: { params: Promise<{ proje
                                     <td style={{ padding: "10px 12px", fontWeight: 500, cursor: "pointer" }} onClick={() => setEditingTask(task)}>{task.title}</td>
                                     <td style={{ padding: "10px 12px" }}><span className={`badge badge-${task.priority}`}>{task.priority}</span></td>
                                     <td style={{ padding: "10px 12px" }}>
-                                        {(() => {
-                                            const assignee = profiles.find((p: any) => p.id === task.assigneeId);
-                                            return assignee ? (
-                                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                    <img src={assignee.avatarUrl} alt="" style={{ width: 20, height: 20, borderRadius: "50%" }} />
-                                                    <span style={{ fontSize: 12 }}>{assignee.name}</span>
-                                                </div>
-                                            ) : (<span style={{ color: "var(--text-tertiary)" }}>—</span>);
-                                        })()}
+                                        {task.assignees && task.assignees.length > 0 ? (
+                                            <div style={{ display: "flex" }}>
+                                                {task.assignees.map((a: any, i: number) => (
+                                                    <img key={a.id} src={a.avatarUrl || "https://api.dicebear.com/9.x/initials/svg?seed=User"} title={a.name} alt={a.name} style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--bg-secondary)", border: "2px solid var(--bg-primary)", marginLeft: i > 0 ? -6 : 0, zIndex: 10 - i }} />
+                                                ))}
+                                            </div>
+                                        ) : (<span style={{ color: "var(--text-tertiary)" }}>—</span>)}
                                     </td>
                                     <td style={{ padding: "10px 12px", fontSize: 12 }}>
-                                        {(() => {
-                                            const team = teams.find((t: any) => t.id === task.teamId);
-                                            return team ? (
-                                                <span className="badge" style={{ fontSize: 10, background: "var(--bg-secondary)", border: "1px solid var(--border-light)" }}>{team.name}</span>
-                                            ) : (<span style={{ color: "var(--text-tertiary)" }}>—</span>);
-                                        })()}
+                                        {task.assignedTeam ? (
+                                            <span className="badge" style={{ fontSize: 10, background: "var(--bg-secondary)", border: "1px solid var(--border-light)" }}>{task.assignedTeam.name}</span>
+                                        ) : (<span style={{ color: "var(--text-tertiary)" }}>—</span>)}
                                     </td>
                                     <td style={{ padding: "10px 12px", color: "var(--text-secondary)" }}>{task.storyPoints || "—"}</td>
                                     <td style={{ padding: "10px 12px", textAlign: "right" }}>

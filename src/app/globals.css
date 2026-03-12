@@ -45,6 +45,7 @@
   --status-in-progress: var(--color-cyan);
   --status-review: var(--color-teal);
   --status-testing: var(--color-emerald);
+  --status-doing: var(--color-cyan);
   --status-done: var(--color-green);
 
   /* Priority colors */
@@ -378,6 +379,11 @@ body {
   color: var(--color-emerald);
 }
 
+.badge-doing {
+  background: #ecfeff;
+  color: var(--color-cyan);
+}
+
 .badge-done {
   background: #ecfdf5;
   color: var(--color-green);
@@ -409,6 +415,10 @@ body {
 
 .status-dot-testing {
   background: var(--status-testing);
+}
+
+.status-dot-doing {
+  background: var(--status-doing);
 }
 
 .status-dot-done {

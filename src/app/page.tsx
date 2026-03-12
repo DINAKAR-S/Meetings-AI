@@ -3,13 +3,16 @@
 import { db } from "@/lib/db";
 import { id } from "@instantdb/react";
 import { useState } from "react";
+import { SprintHealthDashboard } from "@/components/SprintHealthDashboard";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const { isLoading, error, data } = db.useQuery({
     projects: {},
     sprints: {},
-    tasks: {},
+    tasks: { sprint: {}, assignees: {} },
     meetings: {},
+    profiles: {},
   });
 
   if (isLoading) {
@@ -24,16 +27,47 @@ export default function DashboardPage() {
   const sprints = data?.sprints || [];
   const tasks = data?.tasks || [];
   const meetings = data?.meetings || [];
+  const profiles = data?.profiles || [];
+
+  const activeSprint = sprints.find((s) => s.status === "active");
+  const activeSprintTasks = activeSprint ? tasks.filter(t => t.sprint?.id === activeSprint.id) : [];
 
   const activeSprints = sprints.filter((s) => s.status === "active");
-  const tasksInProgress = tasks.filter((t) => t.status === "in_progress");
-  const tasksDone = tasks.filter((t) => t.status === "done");
-  const totalPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
-  const donePoints = tasksDone.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+  const ACTIVE_STATUSES = ["ready", "doing", "in_progress", "review", "testing"];
+  const tasksInProgress = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status));
+
+  const totalPoints = activeSprintTasks.reduce((sum, t) => sum + (t.storyPoints || 3), 0);
+  const donePoints = activeSprintTasks.filter(t => t.status === "done").reduce((sum, t) => sum + (t.storyPoints || 3), 0);
   const velocity = totalPoints > 0 ? Math.round((donePoints / totalPoints) * 100) : 0;
 
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Good Afternoon, Dinakar</h2>
+          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "4px 0 0" }}>Here's what's happening with your projects today.</p>
+        </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Link href="/meetings" className="btn btn-secondary">
+            🤖 Upload Meeting
+          </Link>
+          <Link href="/backlog" className="btn btn-primary">
+            ➕ New Task
+          </Link>
+        </div>
+      </div>
+
+      {/* AI Sprint Health Widget */}
+      {activeSprint && (
+        <div style={{ marginBottom: 24 }}>
+          <SprintHealthDashboard
+            sprint={activeSprint}
+            tasks={tasks.filter(t => t.sprint?.id === activeSprint.id)}
+            profiles={profiles}
+          />
+        </div>
+      )}
+
       {/* Metrics */}
       <div className="metrics-grid">
         <div className="metric-card">
@@ -48,7 +82,7 @@ export default function DashboardPage() {
           <div className="metric-card-label">Tasks In Progress</div>
           <div className="metric-card-value">{tasksInProgress.length}</div>
           <div className="metric-card-change positive">
-            {tasksDone.length} completed
+            {activeSprintTasks.filter(t => t.status === "done").length} completed
           </div>
         </div>
         <div className="metric-card">
@@ -141,37 +175,38 @@ export default function DashboardPage() {
       </div>
 
       {/* AI Recommendations */}
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-header">
-          <span style={{ fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="var(--color-emerald)">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
-            </svg>
-            AI Recommendations
+      <div className="card" style={{ marginTop: 24, border: "none", boxShadow: "var(--shadow-md)", background: "linear-gradient(to bottom right, #ffffff, #f9fdfa)" }}>
+        <div className="card-header" style={{ background: "transparent" }}>
+          <span style={{ fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>✨</span> AI Sprint Intelligence
           </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--color-emerald)", textTransform: "uppercase" }}>Real-time Analysis</span>
         </div>
         <div className="card-body">
           {tasks.length === 0 ? (
-            <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-              Upload a meeting transcript to get AI-powered recommendations for your sprint.
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", textAlign: "center", padding: "20px 0" }}>
+              Upload a meeting transcript to generate AI project intelligence.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
               {tasksInProgress.length > 3 && (
-                <div className="ai-insight-card">
-                  <h4>⚠️ High WIP</h4>
-                  <p>You have {tasksInProgress.length} tasks in progress. Consider finishing some before starting new ones.</p>
+                <div className="ai-insight-card" style={{ background: "white", borderLeft: "4px solid #f59e0b" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#d97706", marginBottom: 4 }}>RESOURCE OVERLOAD</div>
+                  <h4 style={{ fontSize: 14, fontWeight: 700 }}>⚠️ High WIP Detected</h4>
+                  <p style={{ fontSize: 12 }}>You have {tasksInProgress.length} tasks in progress. Throughput may decrease. Recommend focusing on "Done" status.</p>
                 </div>
               )}
               {tasks.filter((t) => t.priority === "critical" && t.status !== "done").length > 0 && (
-                <div className="ai-insight-card">
-                  <h4>🔴 Critical Tasks</h4>
-                  <p>{tasks.filter((t) => t.priority === "critical" && t.status !== "done").length} critical tasks still open.</p>
+                <div className="ai-insight-card" style={{ background: "white", borderLeft: "4px solid #ef4444" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", marginBottom: 4 }}>CRITICAL RISK</div>
+                  <h4 style={{ fontSize: 14, fontWeight: 700 }}>🔴 Performance Blockers</h4>
+                  <p style={{ fontSize: 12 }}>{tasks.filter((t) => t.priority === "critical" && t.status !== "done").length} critical tasks remain open. Sprint goals are at risk.</p>
                 </div>
               )}
-              <div className="ai-insight-card">
-                <h4>📊 Sprint Health</h4>
-                <p>{velocity >= 70 ? "Sprint is on track!" : "Sprint progress is below target. Consider reprioritizing."}</p>
+              <div className="ai-insight-card" style={{ background: "white", borderLeft: "4px solid var(--color-emerald)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--color-emerald)", marginBottom: 4 }}>PROJECT HEALTH</div>
+                <h4 style={{ fontSize: 14, fontWeight: 700 }}>📊 Velocity Insight</h4>
+                <p style={{ fontSize: 12 }}>{velocity >= 70 ? "Team velocity is optimal. Current projection: 100% completion." : "Current velocity is trending lower than historical average."}</p>
               </div>
             </div>
           )}

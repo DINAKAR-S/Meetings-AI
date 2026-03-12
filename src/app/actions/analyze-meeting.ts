@@ -19,33 +19,40 @@ interface ExtractedTask {
     suggested_project_name?: string | null;
     suggested_team_id?: string | null;
     suggested_team_name?: string | null;
-}
-
-interface ExtractedStory {
-    title: string;
-    description: string;
-    tasks: ExtractedTask[];
-    priority: "critical" | "high" | "medium" | "low";
-}
-
-interface ExtractedEpic {
-    title: string;
-    description: string;
-    stories: ExtractedStory[];
+    skill_category?: string;
 }
 
 export interface MeetingAnalysisResult {
     project?: string | null;
     summary: string;
-    epics: ExtractedEpic[];
+    tasks: ExtractedTask[];
     decisions: string[];
     blockers: string[];
     action_items: string[];
+    auto_plan?: {
+        sprint_name: string;
+        sprint_id: string | null;
+        total_points: number;
+        capacity_limit: number;
+        overloaded: boolean;
+        developer_breakdown: {
+            name: string;
+            profile_id: string | null;
+            tasks: string[];
+            points: number;
+            capacity: number;
+        }[];
+    } | null;
 }
 
 export async function analyzeMeeting(
     transcript: string,
-    contextData?: { profiles: any[]; teams: any[]; projects: any[] }
+    contextData?: {
+        profiles: any[];
+        teams: any[];
+        projects: any[];
+        activeSprint?: any;
+    }
 ): Promise<{ success: boolean; data?: MeetingAnalysisResult; error?: string }> {
     try {
         if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "__PLACEHOLDER__") {
@@ -56,7 +63,7 @@ export async function analyzeMeeting(
         if (contextData) {
             contextString = `
 AVAILABLE DEVELOPER PROFILES (Use these to assign tasks):
-${JSON.stringify((contextData.profiles || []).map(p => ({ id: p.id, name: p.name, role: p.role, skills: p.skills, team: p.team?.name || null })), null, 2)}
+${JSON.stringify((contextData.profiles || []).map(p => ({ id: p.id, name: p.name, role: p.role, skills: p.skills, team: p.team?.name || null, capacity: p.capacity })), null, 2)}
 
 AVAILABLE TEAMS:
 ${JSON.stringify((contextData.teams || []).map(t => ({ id: t.id, name: t.name })), null, 2)}
@@ -64,70 +71,76 @@ ${JSON.stringify((contextData.teams || []).map(t => ({ id: t.id, name: t.name })
 AVAILABLE PROJECTS:
 ${JSON.stringify((contextData.projects || []).map(p => ({ id: p.id, name: p.name, description: p.description })), null, 2)}
 
+ACTIVE SPRINT:
+${contextData.activeSprint ? JSON.stringify({ id: contextData.activeSprint.id, name: contextData.activeSprint.name, capacity: contextData.activeSprint.capacity }, null, 2) : "None active"}
+
 INSTRUCTIONS FOR PER-TASK ASSIGNMENT:
 For EACH task, you must determine:
-1. Which PROJECT this task belongs to — match from AVAILABLE PROJECTS by name/context. Set "suggested_project_id" and "suggested_project_name". Different tasks in the same meeting can belong to different projects.
-2. Which TEAM should work on this task — match from AVAILABLE TEAMS. Set "suggested_team_id" and "suggested_team_name". Infer from the developer mentioned or the nature of the task (e.g. backend tasks → Backend Team).
-3. Which DEVELOPER should be assigned — match from AVAILABLE DEVELOPER PROFILES by name mentioned in transcript, or by matching skills/role. Set "suggested_assignee_id" and "suggested_assignee_name".
+1. Which PROJECT this task belongs to — match from AVAILABLE PROJECTS by name/context. Set "suggested_project_id" and "suggested_project_name".
+2. Which TEAM should work on this task — match from AVAILABLE TEAMS. Set "suggested_team_id" and "suggested_team_name".
+3. Which DEVELOPER should be assigned — match from AVAILABLE DEVELOPER PROFILES by name or skills. Set "suggested_assignee_id" and "suggested_assignee_name".
+4. Which SKILL CATEGORY this task requires (e.g. "API", "Frontend", "Database", "Design", "DevOps"). Set "skill_category".
 
-If a developer name is mentioned in the transcript (e.g. "Dinakar will handle backend"), find the matching profile and set both id and name.
-If a team name is mentioned (e.g. "backend team"), find the matching team.
-If a project is discussed, match it to the closest AVAILABLE PROJECT.
-If no match is found, set the id to null but still provide the name/description.
+INSTRUCTIONS FOR AUTO-SPRINT PLAN:
+Based on the extracted tasks and the ACTIVE SPRINT:
+1. Group these tasks by the assigned DEVELOPER.
+2. Calculate the total points for each developer.
+3. Compare against the developer's per-sprint CAPACITY.
+4. If there is an ACTIVE SPRINT, provide a consolidated "auto_plan" summary.
+5. If the total points exceed the active sprint capacity (or individual dev capacities), mark "overloaded" as true.
 `;
         }
 
         const SYSTEM_PROMPT = `You are a software project analyst. You analyze meeting transcripts and extract structured sprint planning data.
 
-Given a meeting transcript, extract:
-1. The overall project context (for the "project" field - what the meeting is generally about)
-2. A brief summary (2-3 sentences)
-3. Epics (major feature areas)
-4. Stories within each epic (user-facing features)
-5. Tasks within each story (actionable dev tasks)
-6. Key decisions made
-7. Blockers identified
-8. Action items
+110: Given a meeting transcript, extract:
+111: 1. The overall project context
+112: 2. A brief summary
+113: 3. Tasks extracted from the discussion
+114: 4. Key decisions, Blockers, and Action items
+6. An AI-calculated Auto Sprint Plan (if sprint context is provided)
 
-For each task, determine priority: critical, high, medium, or low.
-For each task, estimate story_points using Fibonacci scale (1, 2, 3, 5, 8, 13) based on complexity.
-For each task, determine which project, team, and developer it should be assigned to.
+For each task, estimate story_points using Fibonacci scale (1, 2, 3, 5, 8, 13).
 ${contextString}
 
 Return ONLY valid JSON matching this schema:
 {
-  "project": "string or null (overall meeting topic)",
+  "project": "string or null",
   "summary": "string",
-  "epics": [
+  "tasks": [
     {
       "title": "string",
-      "description": "string", 
-      "stories": [
-        {
-          "title": "string",
-          "description": "string",
-          "tasks": [
-            {
-              "title": "string",
-              "description": "string",
-              "priority": "high|medium|low|critical",
-              "story_points": "number (1,2,3,5,8,13)",
-              "suggested_assignee_id": "string or null",
-              "suggested_assignee_name": "string or null",
-              "suggested_project_id": "string or null",
-              "suggested_project_name": "string or null",
-              "suggested_team_id": "string or null",
-              "suggested_team_name": "string or null"
-            }
-          ],
-          "priority": "high|medium|low|critical"
-        }
-      ]
+      "description": "string",
+      "priority": "high|medium|low|critical",
+      "story_points": number,
+      "suggested_assignee_id": "string or null",
+      "suggested_assignee_name": "string or null",
+      "suggested_project_id": "string or null",
+      "suggested_project_name": "string or null",
+      "suggested_team_id": "string or null",
+      "suggested_team_name": "string or null",
+      "skill_category": "string (e.g., API, Database, Frontend, etc.)"
     }
   ],
   "decisions": ["string"],
   "blockers": ["string"],
-  "action_items": ["string"]
+  "action_items": ["string"],
+  "auto_plan": {
+    "sprint_name": "string",
+    "sprint_id": "string or null",
+    "total_points": number,
+    "capacity_limit": number,
+    "overloaded": boolean,
+    "developer_breakdown": [
+      {
+        "name": "string",
+        "profile_id": "string or null",
+        "tasks": ["string (titles)"],
+        "points": number,
+        "capacity": number
+      }
+    ]
+  }
 }`;
 
         const chunks = chunkText(transcript);

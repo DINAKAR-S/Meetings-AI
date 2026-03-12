@@ -40,7 +40,7 @@ ${JSON.stringify(tasks.map((t: any) => ({
             status: t.status,
             priority: t.priority,
             storyPoints: t.storyPoints || 3,
-            assigneeId: t.assigneeId
+            assigneeIds: t.assignees?.map((a: any) => a.id) || []
         })), null, 2)}
 
 Analyze the data for:

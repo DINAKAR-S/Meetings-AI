@@ -14,32 +14,32 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
     // Query everything related to this task and all reference data needed for selectors
     const { isLoading, data } = db.useQuery({
         tasks: {
-            $: { where: { id: taskId } },
-            assigneeProfile: {},
-            assigneeTeam: {},
+            assignees: {},
+            assignedTeam: {},
             project: {},
-            story: { epic: {} },
             subtasks: {},
             comments: { author: {} },
-            activityLogs: {},
+            activityLogs: {}
         },
         profiles: {},
         teams: { members: {} },
         projects: {},
-        stories: {},
+        sprints: {},
     });
 
-    const task = data?.tasks?.[0] as any;
-    const profiles = data?.profiles || [];
+    const allTasks = (data?.tasks as any[] || []);
+    const task = allTasks.find((t: any) => t.id === taskId);
+    const profiles = (data?.profiles as any) || [];
     const teams = data?.teams || [];
     const projects = data?.projects || [];
-    const stories = data?.stories || [];
 
     // Local mutable state for debounced saves
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [newSubtask, setNewSubtask] = useState("");
     const [newComment, setNewComment] = useState("");
+    const [newTag, setNewTag] = useState("");
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     // Initialize local state once data loads
     useEffect(() => {
@@ -72,23 +72,47 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
         }).link({ task: task.id }));
     };
 
-    // Use direct string ID fields instead of InstantDB links to avoid stale unique constraints
-    const handleUpdateRelation = (fieldName: "assigneeId" | "teamId" | "projectId" | "storyId", currentValue: string, newValue: string) => {
+    const handleToggleAssignee = (profileId: string) => {
+        if (!task) return;
+        const currentAssignees = task.assignees || [];
+        const isAssigned = currentAssignees.some((p: any) => p.id === profileId);
+
+        if (isAssigned) {
+            db.transact([
+                db.tx.tasks[task.id].unlink({ assignees: profileId }),
+                db.tx.activityLogs[id()].update({ action: "Removed assignee", entityType: "task", entityId: task.id, createdAt: Date.now() }).link({ task: task.id })
+            ]);
+        } else {
+            db.transact([
+                db.tx.tasks[task.id].link({ assignees: profileId }),
+                db.tx.activityLogs[id()].update({ action: "Added assignee", entityType: "task", entityId: task.id, createdAt: Date.now() }).link({ task: task.id })
+            ]);
+        }
+    };
+
+    const handleUpdateRelation = (fieldName: "teamId" | "projectId", currentValue: string, newValue: string) => {
         if (!task || currentValue === newValue) return;
 
-        console.log(`[TaskDetailModal] Updating ${fieldName}: "${currentValue}" → "${newValue}"`);
+        console.log(`[TaskDetailModal] Updating relationship: ${fieldName} → "${newValue}"`);
 
-        const txs: any[] = [
-            db.tx.tasks[task.id].update({ [fieldName]: newValue || "" })
-        ];
+        const labelMap: Record<string, string> = {
+            teamId: "assignedTeam",
+            projectId: "project"
+        };
+
+        const txs: any[] = [];
+
+        // Unlink old if exists
+        if (currentValue) {
+            txs.push(db.tx.tasks[task.id].unlink({ [labelMap[fieldName]]: currentValue }));
+        }
+
+        // Link new if provided
+        if (newValue) {
+            txs.push(db.tx.tasks[task.id].link({ [labelMap[fieldName]]: newValue }));
+        }
 
         const logId = id();
-        const labelMap: Record<string, string> = {
-            assigneeId: "assignee",
-            teamId: "team",
-            projectId: "project",
-            storyId: "story",
-        };
         const actionText = newValue ? `Updated ${labelMap[fieldName]}` : `Cleared ${labelMap[fieldName]}`;
         txs.push(db.tx.activityLogs[logId].update({
             action: actionText,
@@ -162,25 +186,23 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
 
     if (!task) return null;
 
-    // Read relationship IDs directly from string fields
-    const currentAssignee = task.assigneeId || "";
-    const currentTeam = task.teamId || "";
-    const currentProject = task.projectId || "";
-    const currentStory = task.storyId || "";
-
-    // Look up display names from the loaded lists
-    const projectObj = projects.find((p: any) => p.id === currentProject);
-    const storyObj = stories.find((s: any) => s.id === currentStory);
+    // Read relationship IDs from resolved links
+    const currentAssignees = ((task as any).assignees || []) as any[];
+    const currentTeam = (task as any).assignedTeam?.id || "";
+    const currentProject = (task as any).project?.id || "";
 
     const breadcrumbs = [
-        projectObj?.name || "Unassigned Project",
-        storyObj?.title || null,
-        task.title
+        (task as any).project?.name || "Unassigned Project",
+        (task as any).title
     ].filter(Boolean);
 
-    const sortedSubtasks = [...(task.subtasks || [])].sort((a, b) => a.createdAt - b.createdAt);
-    const sortedComments = [...(task.comments || [])].sort((a, b) => b.createdAt - a.createdAt); // newest first
-    const sortedLogs = [...(task.activityLogs || [])].sort((a, b) => b.createdAt - a.createdAt);
+    const subtasks = (task as any).subtasks || [];
+    const comments = (task as any).comments || [];
+    const sortedSubtasks = [...subtasks].sort((a: any, b: any) => Number(a.createdAt) - Number(b.createdAt));
+    const sortedComments = [...comments].sort((a: any, b: any) => Number(b.createdAt) - Number(a.createdAt)); // newest first
+    const sortedLogs = [...((task as any).activityLogs || [])].sort((a: any, b: any) => Number(b.createdAt) - Number(a.createdAt));
+
+
 
     return (
         <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, padding: "20px" }}>
@@ -299,7 +321,7 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
                             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: "var(--text-secondary)" }}>Comments</div>
 
                             <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-                                <img src={profiles[0]?.avatarUrl || "https://api.dicebear.com/9.x/initials/svg?seed=Me"} alt="" style={{ width: 32, height: 32, borderRadius: "50%" }} />
+                                <img src={(profiles as any)[0]?.avatarUrl || "https://api.dicebear.com/9.x/initials/svg?seed=Me"} alt="" style={{ width: 32, height: 32, borderRadius: "50%" }} />
                                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
                                     <textarea
                                         style={{ width: "100%", minHeight: 60, padding: 12, background: "var(--bg-primary)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", outline: "none", resize: "vertical", fontSize: 14 }}
@@ -315,7 +337,7 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
 
                             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                                 {sortedComments.map(comment => {
-                                    const author = comment.author?.[0];
+                                    const author = comment.author;
                                     const date = new Date(comment.createdAt).toLocaleString();
                                     return (
                                         <div key={comment.id} style={{ display: "flex", gap: 12 }}>
@@ -343,116 +365,171 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
 
                             {/* STATUS */}
                             <div>
-                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Status</label>
-                                <select
-                                    className="form-select"
-                                    value={task.status}
-                                    onChange={(e) => handleUpdateField("status", e.target.value)}
-                                    style={{ background: "var(--bg-secondary)", fontWeight: 500 }}
-                                >
-                                    {STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
-                                </select>
-                            </div>
-
-                            {/* ASSIGNEE */}
-                            <div>
-                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Assignee</label>
-                                <select
-                                    className="form-select"
-                                    value={currentAssignee}
-                                    onChange={(e) => handleUpdateRelation("assigneeId", currentAssignee, e.target.value)}
-                                >
-                                    <option value="">Unassigned</option>
-                                    {profiles.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                            </div>
-
-                            {/* TEAM */}
-                            <div>
-                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Team</label>
-                                <select
-                                    className="form-select"
-                                    value={currentTeam}
-                                    onChange={(e) => handleUpdateRelation("teamId", currentTeam, e.target.value)}
-                                >
-                                    <option value="">No Team</option>
-                                    {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
-                            </div>
-
-                            {/* PROJECT */}
-                            <div>
-                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Project</label>
-                                <select
-                                    className="form-select"
-                                    value={currentProject}
-                                    onChange={(e) => handleUpdateRelation("projectId", currentProject, e.target.value)}
-                                >
-                                    <option value="">No Project</option>
-                                    {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                            </div>
-
-                            {/* STORY */}
-                            <div>
-                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Story / Parent</label>
-                                <select
-                                    className="form-select"
-                                    value={currentStory}
-                                    onChange={(e) => handleUpdateRelation("storyId", currentStory, e.target.value)}
-                                >
-                                    <option value="">No Story</option>
-                                    {stories.map((s: any) => <option key={s.id} value={s.id}>{s.title}</option>)}
-                                </select>
-                            </div>
-
-                            {/* PRIORITY & POINTS */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                <div>
-                                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Priority</label>
+                                <div className="form-group">
+                                    <label className="form-label">Status</label>
                                     <select
                                         className="form-select"
-                                        value={task.priority}
-                                        onChange={(e) => handleUpdateField("priority", e.target.value)}
+                                        value={(task as any).status}
+                                        onChange={(e) => db.transact(db.tx.tasks[task.id].update({ status: e.target.value }))}
+                                        style={{ background: "var(--bg-secondary)", fontWeight: 500 }}
                                     >
-                                        {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                                        {STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
                                     </select>
                                 </div>
-                                <div>
-                                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Points</label>
-                                    <input
-                                        type="number"
-                                        className="form-input"
-                                        value={task.storyPoints || ""}
-                                        onChange={(e) => handleUpdateField("storyPoints", e.target.value ? Number(e.target.value) : null)}
-                                        placeholder="-"
-                                    />
+                            </div>
+
+                            {/* ASSIGNEES */}
+                            <div style={{ marginBottom: 16 }}>
+                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Assignees</label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                                    {currentAssignees.map((a: any) => (
+                                        <span key={a.id} style={{ fontSize: 11, background: "rgba(139, 92, 246, 0.1)", padding: "4px 8px", borderRadius: "100px", border: "1px solid rgba(139, 92, 246, 0.2)", color: "var(--color-indigo)", display: "flex", alignItems: "center", gap: 4 }}>
+                                            <img src={a.avatarUrl || "https://api.dicebear.com/9.x/initials/svg?seed=User"} alt="" style={{ width: 14, height: 14, borderRadius: "50%" }} />
+                                            {a.name}
+                                            <button
+                                                onClick={() => handleToggleAssignee(a.id)}
+                                                style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--color-indigo)", fontSize: 10, display: "flex", alignItems: "center", opacity: 0.6 }}
+                                            >✕</button>
+                                        </span>
+                                    ))}
                                 </div>
+                                <select
+                                    className="form-select"
+                                    value=""
+                                    onChange={(e) => {
+                                        if (e.target.value) handleToggleAssignee(e.target.value);
+                                    }}
+                                >
+                                    <option value="">+ Add Assignee</option>
+                                    {profiles.filter((p: any) => !currentAssignees.some(a => a.id === p.id)).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
                             </div>
 
                             <hr style={{ border: "none", borderTop: "1px solid var(--border-light)", margin: "8px 0" }} />
 
-                            {/* ACTIVITY LOG (Mini) */}
-                            <div>
-                                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 12 }}>Recent Activity</label>
-                                {sortedLogs.length === 0 ? (
-                                    <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No activity yet.</div>
-                                ) : (
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                        {sortedLogs.slice(0, 5).map(log => (
-                                            <div key={log.id} style={{ fontSize: 11, display: "flex", gap: 8 }}>
-                                                <div style={{ color: "var(--text-tertiary)", minWidth: 50 }}>
-                                                    {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </div>
-                                                <div style={{ color: "var(--text-secondary)", flex: 1, wordBreak: "break-word" }}>
-                                                    {log.action}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 12 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: -10 }}>Relationship Details</div>
 
+                                <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 12, padding: "12px", background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
+                                    {/* TEAM */}
+                                    <div>
+                                        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 6 }}>Team</label>
+                                        <select
+                                            className="form-select"
+                                            value={currentTeam}
+                                            onChange={(e) => handleUpdateRelation("teamId", currentTeam, e.target.value)}
+                                            style={{ background: "var(--bg-secondary)", fontSize: 13 }}
+                                        >
+                                            <option value="">No Team</option>
+                                            {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        </select>
+                                    </div>
+
+                                    {/* PROJECT */}
+                                    <div>
+                                        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 6 }}>Project</label>
+                                        <select
+                                            className="form-select"
+                                            value={currentProject}
+                                            onChange={(e) => handleUpdateRelation("projectId", currentProject, e.target.value)}
+                                            style={{ background: "var(--bg-secondary)", fontSize: 13 }}
+                                        >
+                                            <option value="">No Project</option>
+                                            {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        </select>
+                                    </div>
+
+                                    {/* TAGS */}
+                                    <div>
+                                        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 6 }}>Tags</label>
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                                            {((task as any).tags || []).map((tag: string) => (
+                                                <span key={tag} style={{ fontSize: 10, background: "white", padding: "2px 8px", borderRadius: "100px", border: "1px solid var(--border-light)", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
+                                                    {tag}
+                                                    <button
+                                                        onClick={() => {
+                                                            const newTags = ((task as any).tags || []).filter((t: string) => t !== tag);
+                                                            db.transact(db.tx.tasks[task.id].update({ tags: newTags }));
+                                                        }}
+                                                        style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--text-tertiary)", fontSize: 10, display: "flex", alignItems: "center" }}
+                                                    >✕</button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <input
+                                            style={{ width: "100%", padding: "6px 12px", background: "var(--bg-secondary)", border: "1px dashed var(--border-light)", borderRadius: "var(--radius-sm)", fontSize: 13, outline: "none" }}
+                                            placeholder="+ Add tag..."
+                                            value={newTag}
+                                            onChange={(e) => setNewTag(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" && newTag.trim()) {
+                                                    const newTags = [...((task as any).tags || []), newTag.trim()];
+                                                    db.transact(db.tx.tasks[task.id].update({ tags: Array.from(new Set(newTags)) }));
+                                                    setNewTag("");
+                                                }
+                                            }}
+                                        />
+                                    </div>
+
+                                    {/* SOURCE */}
+                                    {((task as any).source) && (
+                                        <div>
+                                            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 4 }}>Source</label>
+                                            <span style={{ fontSize: 11, color: "var(--text-secondary)", display: "block" }}>
+                                                {((task as any).source)}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* ACTIVITY LOG (Mini) */}
+                                    <div>
+                                        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 8 }}>Internal Logs</label>
+                                        {sortedLogs.length === 0 ? (
+                                            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>No activity.</div>
+                                        ) : (
+                                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                                {sortedLogs.slice(0, 3).map(log => (
+                                                    <div key={log.id} style={{ fontSize: 10, color: "var(--text-secondary)" }}>
+                                                        • {log.action}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: "auto", paddingTop: 20 }}>
+                                    <hr style={{ border: "none", borderTop: "1px solid var(--border-light)", margin: "0 0 16px" }} />
+
+                                    {/* PRIORITY & POINTS */}
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                        <div>
+                                            <div className="form-group">
+                                                <label className="form-label">Priority</label>
+                                                <select
+                                                    className="form-select"
+                                                    value={(task as any).priority}
+                                                    onChange={(e) => db.transact(db.tx.tasks[task.id].update({ priority: e.target.value }))}
+                                                >
+                                                    {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="form-group">
+                                                <label className="form-label">Story Points</label>
+                                                <input
+                                                    type="number"
+                                                    className="form-input"
+                                                    value={(task as any).storyPoints || 0}
+                                                    onChange={(e) => db.transact(db.tx.tasks[task.id].update({ storyPoints: parseInt(e.target.value) }))}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
                         </div>
                     </div>
                 </div>

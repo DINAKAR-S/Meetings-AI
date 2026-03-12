@@ -8,12 +8,12 @@ import { TaskDetailModal } from "@/components/TaskDetailModal";
 import { SprintContextBar } from "@/components/SprintContextBar";
 
 const COLUMNS = [
-    { key: "backlog", label: "Backlog", color: "var(--status-backlog)" },
-    { key: "ready", label: "Ready", color: "var(--status-ready)" },
-    { key: "in_progress", label: "In Progress", color: "var(--status-in-progress)" },
-    { key: "review", label: "Code Review", color: "var(--status-review)" },
-    { key: "testing", label: "Testing", color: "var(--status-testing)" },
-    { key: "done", label: "Done", color: "var(--status-done)" },
+    { key: "backlog", label: "Backlog", color: "var(--status-backlog)", icon: "⚪" },
+    { key: "ready", label: "Ready", color: "var(--status-ready)", icon: "🔵" },
+    { key: "in_progress", label: "In Progress", color: "var(--status-in-progress)", icon: "🟡" },
+    { key: "review", label: "Code Review", color: "var(--status-review)", icon: "🟣" },
+    { key: "testing", label: "Testing", color: "var(--status-testing)", icon: "🟠" },
+    { key: "done", label: "Done", color: "var(--status-done)", icon: "🟢" },
 ];
 
 export default function GlobalSprintBoardPage() {
@@ -27,7 +27,7 @@ export default function GlobalSprintBoardPage() {
     const [newTitle, setNewTitle] = useState("");
     const [newDescription, setNewDescription] = useState("");
     const [newPriority, setNewPriority] = useState("medium");
-    const [newAssigneeId, setNewAssigneeId] = useState("");
+    const [newAssigneeIds, setNewAssigneeIds] = useState<string[]>([]);
 
     const [editingTask, setEditingTask] = useState<any>(null);
     const [taskToDelete, setTaskToDelete] = useState<any>(null);
@@ -36,7 +36,11 @@ export default function GlobalSprintBoardPage() {
 
     const { isLoading, data } = db.useQuery({
         projects: { meetings: {} },
-        tasks: {},
+        tasks: {
+            sprint: {},
+            assignees: {},
+            project: {}
+        },
         profiles: {},
         activityLogs: {},
         sprints: {}
@@ -59,18 +63,18 @@ export default function GlobalSprintBoardPage() {
 
     const currentSprint = currentSprintId ? sprints.find((s: any) => s.id === currentSprintId) : null;
 
-    // Filter tasks to this project using string ID field
-    const projectTasks = filterProject ? allTasks.filter((t: any) => t.projectId === project?.id) : [];
+    // Filter tasks to this project
+    const projectTasks = filterProject ? allTasks.filter((t: any) => t.project?.id === project?.id) : [];
 
-    // Apply sprint filter using string ID field
+    // Apply sprint filter
     const tasks = projectTasks.filter((t: any) => {
         if (selectedSprintFilter === "__all__") return true;
-        if (selectedSprintFilter === "__backlog__") return !t.sprintId;
-        return t.sprintId === selectedSprintFilter;
+        if (selectedSprintFilter === "__backlog__") return !t.sprint;
+        return t.sprint?.id === selectedSprintFilter;
     });
 
-    // Capacity calculation for selected sprint
-    const sprintCapacity = currentSprint?.capacity || 0;
+    // Capacity calculation for selected sprint (sum of all developer capacities)
+    const sprintCapacity = profiles.reduce((sum: number, p: any) => sum + (p.capacity || 40), 0);
     const sprintPoints = tasks.reduce((s: number, t: any) => s + (t.storyPoints || 0), 0);
 
     const handleDragStart = useCallback((taskId: string) => {
@@ -114,19 +118,32 @@ export default function GlobalSprintBoardPage() {
         const isEdit = !!editingTask;
         const taskId = isEdit ? editingTask.id : id();
 
-        txs.push(
-            db.tx.tasks[taskId].update({
-                title: newTitle.trim(),
-                description: newDescription.trim(),
-                status: addToColumn,
-                priority: newPriority,
-                createdAt: isEdit ? editingTask.createdAt : Date.now(),
-                // Use string ID fields
-                projectId: project.id,
-                sprintId: (!isEdit && currentSprintId) ? currentSprintId : (isEdit ? editingTask.sprintId || "" : ""),
-                assigneeId: newAssigneeId || (isEdit ? editingTask.assigneeId || "" : ""),
-            })
-        );
+        const updateObj: any = {
+            title: newTitle.trim(),
+            description: newDescription.trim(),
+            status: addToColumn,
+            priority: newPriority,
+            createdAt: isEdit ? editingTask.createdAt : Date.now(),
+        };
+
+        const linkObj: any = {
+            project: project.id,
+        };
+
+        if (!isEdit && currentSprintId) {
+            linkObj.sprint = currentSprintId;
+        }
+
+        if (newAssigneeIds.length > 0) {
+            // For many-to-many, link adds. To replace on edit, we first unlink existing.
+            if (isEdit) {
+                const oldAssignees = editingTask.assignees || [];
+                oldAssignees.forEach((a: any) => txs.push(db.tx.tasks[taskId].unlink({ assignees: a.id })));
+            }
+            linkObj.assignees = newAssigneeIds;
+        }
+
+        txs.push(db.tx.tasks[taskId].update(updateObj).link(linkObj));
 
         if (!isEdit) {
             const activityId = id();
@@ -138,23 +155,24 @@ export default function GlobalSprintBoardPage() {
             }).link({ task: taskId }));
         }
 
-        const oldAssigneeId = isEdit ? editingTask.assigneeId || "" : "";
-        if (newAssigneeId !== oldAssigneeId && newAssigneeId) {
-            const assignee = profiles.find((p: any) => p.id === newAssigneeId);
-            if (assignee) {
-                const assignActivityId = id();
-                txs.push(db.tx.activityLogs[assignActivityId].update({
-                    action: `Assigned to ${assignee.name}`,
-                    entityId: taskId,
-                    entityType: "task",
-                    createdAt: Date.now() + 1
-                }).link({ task: taskId }));
-            }
+        const isNewAssignment = isEdit ? newAssigneeIds.some(id => !(editingTask.assignees || []).some((a: any) => a.id === id)) : true;
+        if (newAssigneeIds.length > 0 && isNewAssignment) {
+            newAssigneeIds.forEach(assigneeId => {
+                const assignee = profiles.find((p: any) => p.id === assigneeId);
+                if (assignee) {
+                    txs.push(db.tx.activityLogs[id()].update({
+                        action: `Assigned to ${assignee.name}`,
+                        entityId: taskId,
+                        entityType: "task",
+                        createdAt: Date.now() + 1
+                    }).link({ task: taskId }));
+                }
+            });
         }
 
         db.transact(txs);
         showToast(isEdit ? "Task updated successfully" : "Task created successfully");
-        setNewTitle(""); setNewDescription(""); setNewAssigneeId(""); setEditingTask(null); setShowAddModal(false);
+        setNewTitle(""); setNewDescription(""); setNewAssigneeIds([]); setEditingTask(null); setShowAddModal(false);
     };
 
     const confirmDeleteTask = () => {
@@ -262,18 +280,23 @@ export default function GlobalSprintBoardPage() {
                 <div style={{ marginLeft: "auto" }}>
                     <button
                         className="btn btn-primary"
+                        style={{ boxShadow: "0 4px 12px rgba(20, 184, 84, 0.2)" }}
                         onClick={() => {
                             if (!filterProject) {
                                 showToast("Please select a project first");
                                 return;
                             }
-                            setEditingTask(null); setNewTitle(""); setNewDescription(""); setNewAssigneeId(""); setAddToColumn("backlog"); setShowAddModal(true);
+                            setEditingTask(null); setNewTitle(""); setNewDescription(""); setNewAssigneeIds([]); setAddToColumn("backlog"); setShowAddModal(true);
                         }}
                     >
-                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                        Add Task
+                        ➕ Add Task
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        style={{ marginLeft: 8 }}
+                        onClick={() => window.location.href = "/meetings"}
+                    >
+                        🤖 AI Extract
                     </button>
                 </div>
             </div>
@@ -298,9 +321,9 @@ export default function GlobalSprintBoardPage() {
                                 onDragLeave={handleDragLeave}
                                 onDrop={() => handleDrop(col.key)}
                             >
-                                <div className="kanban-column-header">
+                                <div className="kanban-column-header" style={{ borderTop: `3px solid ${col.color}`, borderBottom: "1px solid var(--border-light)" }}>
                                     <div className="kanban-column-title">
-                                        <span className={`status-dot status-dot-${col.key}`} />
+                                        <span style={{ marginRight: 4 }}>{col.icon}</span>
                                         {col.label}
                                         <span className="kanban-column-count">{colTasks.length}</span>
                                     </div>
@@ -319,7 +342,7 @@ export default function GlobalSprintBoardPage() {
                                         </div>
                                     ) : (
                                         colTasks.map((task: any) => {
-                                            const assignee = profiles.find((p: any) => p.id === task.assigneeId);
+                                            const assignee = task.assignedTo;
                                             return (
                                                 <div
                                                     key={task.id}
@@ -328,23 +351,58 @@ export default function GlobalSprintBoardPage() {
                                                     onDragStart={() => handleDragStart(task.id)}
                                                     onDragEnd={() => { setDraggedTask(null); setDragOverCol(null); }}
                                                     onClick={() => setSelectedTask(task)}
-                                                    style={{ cursor: "pointer" }}
+                                                    style={{
+                                                        cursor: "pointer",
+                                                        borderLeft: `3px solid var(--priority-${task.priority})`,
+                                                        position: "relative"
+                                                    }}
+                                                    title={`Assignees: ${(task.assignees || []).map((a: any) => a.name).join(", ") || "Unassigned"}\nPriority: ${task.priority}\nPoints: ${task.storyPoints || 0}`}
                                                 >
                                                     <div className="task-card-title">{task.title}</div>
-                                                    <div className="task-card-meta">
-                                                        <span className={`badge badge-${task.priority}`}>{task.priority}</span>
-                                                        {assignee && (
-                                                            <div className="task-card-assignee" title={assignee.name}>
-                                                                <img src={assignee.avatarUrl} alt={assignee.name} style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--bg-secondary)" }} />
-                                                                <span style={{ maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                                    {assignee.name.split(" ")[0]}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {task.storyPoints && (
-                                                            <span style={{ fontSize: 10, fontWeight: 700, background: "var(--bg-primary)", padding: "1px 6px", borderRadius: "100px", color: "var(--text-secondary)" }}>
-                                                                {task.storyPoints} pts
+
+                                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 12 }}>
+                                                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                                            <span style={{ fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 3, color: `var(--priority-${task.priority})` }}>
+                                                                {task.priority === "critical" ? "🔥" : task.priority === "high" ? "🟠" : task.priority === "medium" ? "🔵" : "⚪"}
+                                                                {task.priority.toUpperCase()}
                                                             </span>
+                                                            {task.storyPoints && (
+                                                                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 3 }}>
+                                                                    ⚡ {task.storyPoints}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {task.assignees && task.assignees.length > 0 && (
+                                                            <div style={{ display: "flex", flexDirection: "row-reverse" }}>
+                                                                {task.assignees.map((a: any, i: number) => {
+                                                                    const initials = a.name.split(" ").map((n: string) => n[0]).join("").toUpperCase();
+                                                                    return (
+                                                                        <div
+                                                                            key={a.id}
+                                                                            style={{
+                                                                                width: 22,
+                                                                                height: 22,
+                                                                                borderRadius: "50%",
+                                                                                background: i % 2 === 0 ? "var(--color-indigo)" : "var(--color-teal)",
+                                                                                color: "white",
+                                                                                fontSize: 8,
+                                                                                fontWeight: 700,
+                                                                                display: "flex",
+                                                                                alignItems: "center",
+                                                                                justifyContent: "center",
+                                                                                border: "2px solid var(--bg-card)",
+                                                                                marginLeft: i > 0 ? -8 : 0,
+                                                                                zIndex: i,
+                                                                                boxShadow: "var(--shadow-sm)"
+                                                                            }}
+                                                                            title={a.name}
+                                                                        >
+                                                                            {initials}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -398,10 +456,35 @@ export default function GlobalSprintBoardPage() {
                                 </div>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Assignee</label>
-                                <select className="form-select" value={newAssigneeId} onChange={(e) => setNewAssigneeId(e.target.value)}>
-                                    <option value="">-- Unassigned --</option>
-                                    {profiles.map((profile: any) => (<option key={profile.id} value={profile.id}>{profile.name} ({profile.role})</option>))}
+                                <label className="form-label">Assignees</label>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                                    {newAssigneeIds.map(id => {
+                                        const p = profiles.find((prof: any) => prof.id === id);
+                                        return p ? (
+                                            <span key={id} style={{ fontSize: 11, background: "rgba(139, 92, 246, 0.1)", padding: "4px 8px", borderRadius: "100px", border: "1px solid rgba(139, 92, 246, 0.2)", color: "var(--color-indigo)", display: "flex", alignItems: "center", gap: 4 }}>
+                                                {p.name}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNewAssigneeIds(prev => prev.filter(aid => aid !== id))}
+                                                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--color-indigo)", fontSize: 10, display: "flex", alignItems: "center", opacity: 0.6 }}
+                                                >✕</button>
+                                            </span>
+                                        ) : null;
+                                    })}
+                                </div>
+                                <select
+                                    className="form-select"
+                                    value=""
+                                    onChange={(e) => {
+                                        if (e.target.value && !newAssigneeIds.includes(e.target.value)) {
+                                            setNewAssigneeIds([...newAssigneeIds, e.target.value]);
+                                        }
+                                    }}
+                                >
+                                    <option value="">+ Add Assignee</option>
+                                    {profiles.filter((profile: any) => !newAssigneeIds.includes(profile.id)).map((profile: any) => (
+                                        <option key={profile.id} value={profile.id}>{profile.name} ({profile.role})</option>
+                                    ))}
                                 </select>
                             </div>
                         </div>

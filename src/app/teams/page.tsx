@@ -6,27 +6,27 @@ import { id } from "@instantdb/react";
 import { useToast } from "@/components/Toast";
 
 const AVATAR_STYLES = [
-  { key: "initials", label: "Initials", urlFn: (name: string) => `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=14b88b,14b854,14afb8,1478b8,41b814` },
-  { key: "pixel", label: "Pixel Art", urlFn: (name: string) => `https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(name)}` },
-  { key: "micah", label: "Micah", urlFn: (name: string) => `https://api.dicebear.com/9.x/micah/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0ede9,e5e7eb` },
-  { key: "bottts", label: "Robot", urlFn: (name: string) => `https://api.dicebear.com/9.x/bottts/svg?seed=${encodeURIComponent(name)}` },
-  { key: "lorelei", label: "Lorelei", urlFn: (name: string) => `https://api.dicebear.com/9.x/lorelei/svg?seed=${encodeURIComponent(name)}` },
-  { key: "notionists", label: "Notionist", urlFn: (name: string) => `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}` },
-  { key: "thumbs", label: "Thumbs", urlFn: (name: string) => `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(name)}` },
-  { key: "shapes", label: "Shapes", urlFn: (name: string) => `https://api.dicebear.com/9.x/shapes/svg?seed=${encodeURIComponent(name)}` },
-  { key: "rings", label: "Rings", urlFn: (name: string) => `https://api.dicebear.com/9.x/rings/svg?seed=${encodeURIComponent(name)}` },
-  { key: "identicon", label: "Identicon", urlFn: (name: string) => `https://api.dicebear.com/9.x/identicon/svg?seed=${encodeURIComponent(name)}` },
+  { key: "initials", label: "Initials", urlFn: (name: string) => `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=14b88b,14b854,14afb8,1478b8,41b814` },
+  { key: "pixel-art", label: "Pixel Art", urlFn: (name: string) => `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(name)}` },
+  { key: "micah", label: "Micah", urlFn: (name: string) => `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(name)}` },
+  { key: "bottts", label: "Robot", urlFn: (name: string) => `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}` },
+  { key: "lorelei", label: "Lorelei", urlFn: (name: string) => `https://api.dicebear.com/7.x/lorelei/svg?seed=${encodeURIComponent(name)}` },
+  { key: "notionists", label: "Notionist", urlFn: (name: string) => `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(name)}` },
+  { key: "thumbs", label: "Thumbs", urlFn: (name: string) => `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(name)}` },
+  { key: "shapes", label: "Shapes", urlFn: (name: string) => `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(name)}` },
+  { key: "rings", label: "Rings", urlFn: (name: string) => `https://api.dicebear.com/7.x/rings/svg?seed=${encodeURIComponent(name)}` },
+  { key: "identicon", label: "Identicon", urlFn: (name: string) => `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(name)}` },
 ];
 
 export default function TeamsPage() {
   const { isLoading, error, data } = db.useQuery({
-    teams: {
-      members: {},
-      assignedTasks: {},
-    },
+    teams: {},
     profiles: {
       team: {},
-      assignedTasks: {},
+    },
+    tasks: {
+      assignees: {},
+      assignedTeam: {},
     },
   });
 
@@ -65,8 +65,26 @@ export default function TeamsPage() {
     );
   }
 
+  if (error) {
+    return (
+      <div style={{ padding: 40, color: "var(--status-testing)", textAlign: "center" }}>
+        <h3>Error loading teams data</h3>
+        <p>{error.message}</p>
+      </div>
+    );
+  }
+
   const teams = data?.teams || [];
   const allProfiles = data?.profiles || [];
+  const allTasks = data?.tasks || [];
+
+  // Manual grouping of profiles into teams for robust UI display
+  const teamsWithMembers = teams.map(team => ({
+    ...team,
+    members: allProfiles.filter(p => p.team?.id === team.id)
+  }));
+
+  const unassignedMembers = allProfiles.filter(p => !p.team);
 
   const handleCreateTeam = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,7 +139,6 @@ export default function TeamsPage() {
 
     const profileId = id();
 
-    const seed = encodeURIComponent(memberName.trim());
     const avatarStyle = AVATAR_STYLES.find(s => s.key === memberAvatarType) || AVATAR_STYLES[0];
     const avatarUrl = avatarStyle.urlFn(memberName.trim());
 
@@ -130,16 +147,16 @@ export default function TeamsPage() {
         name: memberName,
         email: memberEmail,
         role: memberRole,
-        skills: memberSkills,
-        capacity: parseInt(memberCapacity) || 40,
+        capacity: memberCapacity ? parseInt(memberCapacity) : 40,
         status: "Available",
         avatarUrl,
+        skills: memberSkills.trim() || "",
         createdAt: new Date(),
       }),
     ];
 
     if (memberTeamId) {
-      txs.push(db.tx.teams[memberTeamId].link({ members: profileId }));
+      txs.push(db.tx.profiles[profileId].link({ team: memberTeamId }));
     }
 
     db.transact(txs);
@@ -164,18 +181,20 @@ export default function TeamsPage() {
         name: memberName,
         email: memberEmail,
         role: memberRole,
-        skills: memberSkills,
         capacity: parseInt(memberCapacity) || 40,
+        skills: memberSkills.trim() || "",
         avatarUrl: AVATAR_STYLES.find(s => s.key === memberAvatarType)?.urlFn(memberName.trim()) || editingProfile.avatarUrl,
       }),
     ];
 
-    if (memberTeamId !== (editingProfile.team?.id || "")) {
-      if (editingProfile.team?.id) {
-        txs.push(db.tx.teams[editingProfile.team.id].unlink({ members: editingProfile.id }));
+    const currentTeamId = editingProfile.team?.id;
+
+    if (memberTeamId !== (currentTeamId || "")) {
+      if (currentTeamId) {
+        txs.push(db.tx.profiles[editingProfile.id].unlink({ team: currentTeamId }));
       }
       if (memberTeamId) {
-        txs.push(db.tx.teams[memberTeamId].link({ members: editingProfile.id }));
+        txs.push(db.tx.profiles[editingProfile.id].link({ team: memberTeamId }));
       }
     }
 
@@ -211,17 +230,20 @@ export default function TeamsPage() {
 
     const txs: any[] = [];
     if (currentTeamId) {
-      txs.push(db.tx.teams[currentTeamId].unlink({ members: memberId }));
+      txs.push(db.tx.profiles[memberId].unlink({ team: currentTeamId }));
     }
     if (teamId) {
-      txs.push(db.tx.teams[teamId].link({ members: memberId }));
+      txs.push(db.tx.profiles[memberId].link({ team: teamId }));
     }
 
     db.transact(txs);
     showToast(`Member moved successfully`);
   };
 
+  const ACTIVE_STATUSES = ["ready", "doing", "in_progress", "review", "testing"];
   const activeProfile = selectedProfileId ? allProfiles.find(p => p.id === selectedProfileId) : null;
+  const activeProfileTasks = activeProfile ? allTasks.filter((t: any) => t.assignees?.some((a: any) => a.id === activeProfile.id)) : [];
+  const activeTasksForProfile = activeProfileTasks.filter((t: any) => ACTIVE_STATUSES.includes(t.status));
 
   return (
     <div>
@@ -264,7 +286,7 @@ export default function TeamsPage() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              {teams.map((team) => (
+              {teamsWithMembers.map((team) => (
                 <div
                   key={team.id}
                   className={`card ${dragOverTeamId === team.id ? "drag-over" : ""}`}
@@ -287,7 +309,7 @@ export default function TeamsPage() {
                     <div>
                       <h3 style={{ margin: 0, fontSize: 16 }}>{team.name}</h3>
                       <p style={{ margin: "4px 0 0 0", fontSize: 13, color: "var(--text-secondary)" }}>
-                        {team.members?.length || 0} Members • {(team.assignedTasks?.length || 0) + (team.members?.reduce((acc: number, p: any) => acc + (p.assignedTasks?.length || 0), 0) || 0)} Active Tasks
+                        {team.members?.length || 0} Members • {allTasks.filter((t: any) => ACTIVE_STATUSES.includes(t.status) && (t.assignedTeam?.id === team.id || team.members?.some((p: any) => t.assignees?.some((a: any) => a.id === p.id)))).length} Active Tasks
                       </p>
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -360,8 +382,16 @@ export default function TeamsPage() {
                               <div style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {profile.role}
                               </div>
+                              {profile.skills && (
+                                <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap", overflow: "hidden" }}>
+                                  {profile.skills.split(",").map((s: string) => s.trim()).filter(Boolean).slice(0, 3).map((skill: string) => (
+                                    <span key={skill} style={{ fontSize: 9, background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "100px", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>{skill}</span>
+                                  ))}
+                                  {profile.skills.split(",").filter(Boolean).length > 3 && <span style={{ fontSize: 9, color: "var(--text-tertiary)" }}>+{profile.skills.split(",").filter(Boolean).length - 3}</span>}
+                                </div>
+                              )}
                               <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
-                                {profile.assignedTasks?.filter((t: any) => t.status === "in_progress").length || 0} active • Capacity: {profile.capacity} pts
+                                {allTasks.filter((t: any) => t.assignees?.some((a: any) => a.id === profile.id) && ACTIVE_STATUSES.includes(t.status)).length} active • Capacity: {profile.capacity} pts
                               </div>
                             </div>
                           </div>
@@ -388,20 +418,20 @@ export default function TeamsPage() {
                   transition: "all 0.2s ease",
                   boxShadow: dragOverTeamId === "unassigned" ? "0 0 0 2px var(--color-emerald)" : "none",
                   border: dragOverTeamId === "unassigned" ? "1px solid transparent" : "1px solid var(--border-light)",
-                  display: (allProfiles.filter(p => !p.team).length > 0 || dragOverTeamId === "unassigned") ? "block" : "none"
+                  display: (unassignedMembers.length > 0 || dragOverTeamId === "unassigned") ? "block" : "none"
                 }}
               >
                 <div className="card-header">
                   <h3 style={{ margin: 0, fontSize: 16 }}>Unassigned Members</h3>
                 </div>
                 <div className="card-body" style={{ padding: "16px 20px" }}>
-                  {allProfiles.filter(p => !p.team).length === 0 ? (
+                  {unassignedMembers.length === 0 ? (
                     <div style={{ textAlign: "center", padding: "12px 0", color: "var(--text-tertiary)", fontSize: 13, border: "1px dashed var(--border-light)", borderRadius: "var(--radius-sm)" }}>
                       Drop members here to unassign them
                     </div>
                   ) : (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-                      {allProfiles.filter(p => !p.team).map((profile) => (
+                      {unassignedMembers.map((profile) => (
                         <div
                           key={profile.id}
                           draggable
@@ -436,6 +466,17 @@ export default function TeamsPage() {
                             <div style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                               {profile.role}
                             </div>
+                            {profile.skills && (
+                              <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap", overflow: "hidden" }}>
+                                {profile.skills.split(",").map((s: string) => s.trim()).filter(Boolean).slice(0, 3).map((skill: string) => (
+                                  <span key={skill} style={{ fontSize: 9, background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "100px", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>{skill}</span>
+                                ))}
+                                {profile.skills.split(",").filter(Boolean).length > 3 && <span style={{ fontSize: 9, color: "var(--text-tertiary)" }}>+{profile.skills.split(",").filter(Boolean).length - 3}</span>}
+                              </div>
+                            )}
+                            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                              {allTasks.filter((t: any) => t.assignees?.some((a: any) => a.id === profile.id) && ACTIVE_STATUSES.includes(t.status)).length} active • Capacity: {profile.capacity} pts
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -455,12 +496,11 @@ export default function TeamsPage() {
                 <div style={{ display: "flex", gap: 8 }}>
                   <button className="btn btn-secondary btn-sm" onClick={() => {
                     setEditingProfile(activeProfile);
-                    setMemberName(activeProfile.name);
+                    setMemberName(activeProfile.name || "");
                     setMemberEmail(activeProfile.email || "");
                     setMemberRole(activeProfile.role || "");
                     setMemberSkills(activeProfile.skills || "");
                     setMemberCapacity(activeProfile.capacity?.toString() || "40");
-                    setMemberAvatarType("initials");
                     setMemberTeamId(activeProfile.team?.id || "");
                     setIsMemberModalOpen(true);
                   }}>Edit</button>
@@ -539,11 +579,7 @@ export default function TeamsPage() {
               </div>
 
               <div style={{ marginTop: 24 }}>
-                <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--text-tertiary)", letterSpacing: "0.5px", marginBottom: 12 }}>Skills & Capacity</h4>
-                <div style={{ fontSize: 13, marginBottom: 12 }}>
-                  <span style={{ color: "var(--text-secondary)" }}>Skills: </span>
-                  {activeProfile.skills || "Not specified"}
-                </div>
+                <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--text-tertiary)", letterSpacing: "0.5px", marginBottom: 12 }}>Capacity</h4>
                 <div style={{ fontSize: 13 }}>
                   <span style={{ color: "var(--text-secondary)" }}>Capacity: </span>
                   {activeProfile.capacity} points / sprint
@@ -555,24 +591,24 @@ export default function TeamsPage() {
                 <div className="metrics-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div style={{ background: "var(--bg-secondary)", padding: 12, borderRadius: "var(--radius-md)", textAlign: "center" }}>
                     <div style={{ fontSize: 18, fontWeight: 700 }}>
-                      {activeProfile.assignedTasks?.filter((t: any) => t.status === "in_progress").length || 0}
+                      {activeProfileTasks.filter((t: any) => ACTIVE_STATUSES.includes(t.status)).length || 0}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>In Progress</div>
+                    <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Active Tasks</div>
                   </div>
                   <div style={{ background: "var(--bg-secondary)", padding: 12, borderRadius: "var(--radius-md)", textAlign: "center" }}>
                     <div style={{ fontSize: 18, fontWeight: 700 }}>
-                      {activeProfile.assignedTasks?.filter((t: any) => t.status === "done").length || 0}
+                      {activeProfileTasks.filter((t: any) => t.status === "done").length || 0}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Completed</div>
                   </div>
                 </div>
                 <div style={{ marginTop: 12, border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: "12px", background: "var(--bg-secondary)" }}>
                   <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>Active Tasks:</div>
-                  {(!activeProfile.assignedTasks || activeProfile.assignedTasks.length === 0) ? (
-                    <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No tasks assigned.</div>
+                  {(!activeTasksForProfile || activeTasksForProfile.length === 0) ? (
+                    <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No active tasks.</div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {activeProfile.assignedTasks.slice(0, 3).map((task: any) => (
+                      {activeTasksForProfile.slice(0, 3).map((task: any) => (
                         <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
                           <span className={`status-dot status-dot-${task.status}`}></span>
                           <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>
@@ -580,9 +616,9 @@ export default function TeamsPage() {
                           </div>
                         </div>
                       ))}
-                      {activeProfile.assignedTasks.length > 3 && (
+                      {activeTasksForProfile.length > 3 && (
                         <div style={{ fontSize: 11, color: "var(--text-secondary)", textAlign: "center", marginTop: 4 }}>
-                          +{activeProfile.assignedTasks.length - 3} more
+                          +{activeTasksForProfile.length - 3} more
                         </div>
                       )}
                     </div>
@@ -668,6 +704,17 @@ export default function TeamsPage() {
               </div>
 
               <div>
+                <label className="form-label">Skills (comma separated)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. React, Node.js, Design"
+                  value={memberSkills}
+                  onChange={(e) => setMemberSkills(e.target.value)}
+                />
+              </div>
+
+              <div>
                 <label className="form-label">Assign to Team</label>
                 <select
                   className="form-input"
@@ -675,57 +722,46 @@ export default function TeamsPage() {
                   onChange={(e) => setMemberTeamId(e.target.value)}
                 >
                   <option value="">-- No Team (Unassigned) --</option>
-                  {teams.map((t) => (
+                  {teams.map((t: any) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="form-label">Skills (Comma separated)</label>
+                <label className="form-label">Weekly Capacity (Story Points) *</label>
                 <input
-                  type="text"
+                  type="number"
                   className="form-input"
-                  placeholder="Node.js, PostgreSQL, APIs"
-                  value={memberSkills}
-                  onChange={(e) => setMemberSkills(e.target.value)}
+                  placeholder="e.g. 40"
+                  value={memberCapacity}
+                  onChange={(e) => setMemberCapacity(e.target.value)}
+                  required
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <label className="form-label">Sprint Capacity (Pts)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    placeholder="40"
-                    value={memberCapacity}
-                    onChange={(e) => setMemberCapacity(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Avatar Style</label>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, padding: 8, background: "var(--bg-secondary)", borderRadius: "var(--radius-md)" }}>
-                    {AVATAR_STYLES.map(style => (
-                      <div
-                        key={style.key}
-                        onClick={() => setMemberAvatarType(style.key)}
-                        style={{
-                          cursor: "pointer",
-                          textAlign: "center",
-                          padding: 4,
-                          borderRadius: "var(--radius-sm)",
-                          border: memberAvatarType === style.key ? "2px solid var(--color-emerald)" : "2px solid transparent",
-                          background: memberAvatarType === style.key ? "rgba(20, 184, 84, 0.08)" : "transparent",
-                          transition: "all 0.15s ease",
-                        }}
-                        title={style.label}
-                      >
-                        <img src={style.urlFn(memberName.trim() || "User")} style={{ width: 32, height: 32, borderRadius: "50%" }} alt={style.label} />
-                        <div style={{ fontSize: 9, color: "var(--text-tertiary)", marginTop: 1 }}>{style.label}</div>
-                      </div>
-                    ))}
-                  </div>
+              <div>
+                <label className="form-label">Avatar Style</label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, padding: 8, background: "var(--bg-secondary)", borderRadius: "var(--radius-md)" }}>
+                  {AVATAR_STYLES.map(style => (
+                    <div
+                      key={style.key}
+                      onClick={() => setMemberAvatarType(style.key)}
+                      style={{
+                        cursor: "pointer",
+                        textAlign: "center",
+                        padding: 4,
+                        borderRadius: "var(--radius-sm)",
+                        border: memberAvatarType === style.key ? "2px solid var(--color-emerald)" : "2px solid transparent",
+                        background: memberAvatarType === style.key ? "rgba(20, 184, 84, 0.08)" : "transparent",
+                        transition: "all 0.15s ease",
+                      }}
+                      title={style.label}
+                    >
+                      <img src={style.urlFn(memberName.trim() || "User")} style={{ width: 32, height: 32, borderRadius: "50%" }} alt={style.label} />
+                      <div style={{ fontSize: 9, color: "var(--text-tertiary)", marginTop: 1 }}>{style.label}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

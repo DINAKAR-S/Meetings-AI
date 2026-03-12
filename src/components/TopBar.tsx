@@ -122,24 +122,54 @@ export default function TopBar() {
                             zIndex: 1000,
                             overflow: "hidden",
                         }}>
-                            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-light)" }}>
+                            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 8 }}>
                                 <input
                                     ref={searchInputRef}
                                     className="form-input"
-                                    placeholder="Search tasks... (Ctrl+K)"
+                                    placeholder="Search tasks or type a command... (Ctrl+K)"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    style={{ border: "none", padding: 0, fontSize: 14, background: "transparent", outline: "none", boxShadow: "none" }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" && searchQuery.trim().length > 3) {
+                                            router.push(`/assistant?q=${encodeURIComponent(searchQuery)}`);
+                                            setShowSearch(false);
+                                            setSearchQuery("");
+                                        }
+                                    }}
+                                    style={{ border: "none", padding: 0, fontSize: 14, background: "transparent", outline: "none", boxShadow: "none", flex: 1 }}
                                 />
+                                {searchQuery.length > 0 && (
+                                    <div style={{ fontSize: 10, color: "var(--text-tertiary)", fontWeight: 600, background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 4 }}>
+                                        ENTER ↵ for AI
+                                    </div>
+                                )}
                             </div>
                             <div style={{ maxHeight: 320, overflowY: "auto" }}>
-                                {searchQuery.trim().length < 2 ? (
-                                    <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
-                                        Type at least 2 characters to search...
+                                {searchQuery.trim().length > 0 && (
+                                    <div
+                                        className="hover-card"
+                                        style={{ padding: "12px 16px", cursor: "pointer", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 10 }}
+                                        onClick={() => {
+                                            router.push(`/assistant?q=${encodeURIComponent(searchQuery)}`);
+                                            setShowSearch(false);
+                                            setSearchQuery("");
+                                        }}
+                                    >
+                                        <span style={{ fontSize: 18 }}>✨</span>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-indigo)" }}>Ask AI Assistant</div>
+                                            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>"{searchQuery}"</div>
+                                        </div>
                                     </div>
-                                ) : searchResults.length === 0 ? (
-                                    <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
-                                        No tasks found for "{searchQuery}"
+                                )}
+
+                                {searchQuery.trim().length < 2 && searchQuery.trim().length > 0 ? (
+                                    <div style={{ padding: "16px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 12 }}>
+                                        Keep typing to search tasks...
+                                    </div>
+                                ) : searchResults.length === 0 && searchQuery.trim().length >= 2 ? (
+                                    <div style={{ padding: "16px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 12 }}>
+                                        No matching tasks found.
                                     </div>
                                 ) : (
                                     searchResults.map((task: any) => (
@@ -156,8 +186,8 @@ export default function TopBar() {
                                             }}
                                             onClick={() => {
                                                 // Navigate to project sprint board or backlog based on whether task has a project
-                                                if (task.project?.[0]) {
-                                                    router.push(`/projects/${task.project[0].id}/backlog`);
+                                                if (task.project) {
+                                                    router.push(`/projects/${task.project.id}/backlog`);
                                                 } else {
                                                     router.push("/backlog");
                                                 }
@@ -176,7 +206,7 @@ export default function TopBar() {
                                                 </div>
                                                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 1 }}>
                                                     {task.status.replace("_", " ")} • {task.priority}
-                                                    {task.project?.[0] && ` • ${task.project[0].name}`}
+                                                    {task.project && ` • ${task.project.name}`}
                                                 </div>
                                             </div>
                                             <span className={`badge badge-${task.priority}`} style={{ fontSize: 10, flexShrink: 0 }}>

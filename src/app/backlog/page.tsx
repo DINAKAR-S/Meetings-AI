@@ -36,7 +36,12 @@ export default function BacklogPage() {
     const { showToast } = useToast();
 
     const { isLoading, data } = db.useQuery({
-        tasks: {},
+        tasks: {
+            sprint: {},
+            assignees: {},
+            project: {},
+            assignedTeam: {}
+        },
         profiles: {},
         projects: {},
         teams: { members: {} },
@@ -92,7 +97,7 @@ export default function BacklogPage() {
     const handleAssignToSprint = () => {
         if (selectedTaskIds.size === 0 || !selectedSprintId) return;
         const txs = Array.from(selectedTaskIds).map(taskId =>
-            db.tx.tasks[taskId].update({ sprintId: selectedSprintId })
+            db.tx.tasks[taskId].link({ sprint: selectedSprintId })
         );
         db.transact(txs);
         showToast(`${selectedTaskIds.size} task(s) added to sprint`);
@@ -114,28 +119,48 @@ export default function BacklogPage() {
         setShowBulkDeleteConfirm(false);
     };
 
+    const handleUpdateAssignee = (taskId: string, profileId: string) => {
+        if (!profileId) return;
+        db.transact(db.tx.tasks[taskId].link({ assignees: profileId }));
+        showToast("Assignee updated");
+    };
+
     const handleAcceptAiPlan = (finalAssignments: { taskId: string; assigneeId: string }[]) => {
         if (!selectedSprintId) return;
+
+        const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
         const txs: any[] = [];
         for (const assignment of finalAssignments) {
             const taskId = assignment.taskId;
             const assigneeId = assignment.assigneeId;
-            txs.push(db.tx.tasks[taskId].update({
-                sprintId: selectedSprintId,
-                assigneeId: assigneeId,
-            }));
-            const logId = id();
-            txs.push(db.tx.activityLogs[logId].update({
-                action: "Assigned via AI Interactive Planner",
-                entityId: taskId,
-                entityType: "task",
-                createdAt: Date.now()
-            }).link({ task: taskId }));
+
+            // Only transact if IDs are valid UUIDs
+            if (isUuid(taskId)) {
+                const txObj = db.tx.tasks[taskId].link({
+                    sprint: selectedSprintId,
+                });
+
+                if (assigneeId && isUuid(assigneeId)) {
+                    txObj.link({ assignees: assigneeId });
+                }
+
+                txs.push(txObj);
+
+                const logId = id();
+                txs.push(db.tx.activityLogs[logId].update({
+                    action: "Assigned via AI Interactive Planner",
+                    entityId: taskId,
+                    entityType: "task",
+                    createdAt: Date.now()
+                }).link({ task: taskId }));
+            }
         }
 
-        db.transact(txs);
-        showToast(`Sprint Plan applied (${finalAssignments.length} tasks)`);
+        if (txs.length > 0) {
+            db.transact(txs);
+            showToast(`Sprint Plan applied (${txs.filter(t => t.action === "update" || t.op === "link").length} updates)`);
+        }
         setShowAiPlanModal(false);
         setAiPlanResult(null);
     };
@@ -143,11 +168,11 @@ export default function BacklogPage() {
     const filteredTasks = tasks.filter((t: any) => {
         if (filterPriority !== "all" && t.priority !== filterPriority) return false;
         if (filterStatus !== "all" && t.status !== filterStatus) return false;
-        if (filterAssignee && t.assigneeId !== filterAssignee) return false;
-        if (filterProject && t.projectId !== filterProject) return false;
-        if (filterTeam && t.teamId !== filterTeam) return false;
-        if (filterSprint === "__backlog__" && t.sprintId) return false;
-        if (filterSprint !== "all" && filterSprint !== "__backlog__" && t.sprintId !== filterSprint) return false;
+        if (filterAssignee && !t.assignees?.some((a: any) => a.id === filterAssignee)) return false;
+        if (filterProject && t.project?.id !== filterProject) return false;
+        if (filterTeam && t.assignedTeam?.id !== filterTeam) return false;
+        if (filterSprint === "__backlog__" && t.sprint) return false;
+        if (filterSprint !== "all" && filterSprint !== "__backlog__" && t.sprint?.id !== filterSprint) return false;
         return true;
     });
 
@@ -250,7 +275,7 @@ export default function BacklogPage() {
                 Showing {filteredTasks.length} tasks
                 {filterSprint === "__backlog__" && (
                     <span style={{ marginLeft: 8, color: "var(--color-emerald)", fontWeight: 600 }}>
-                        • {tasks.filter((t: any) => t.sprintId).length} tasks in sprints
+                        • {tasks.filter((t: any) => t.sprint).length} tasks in sprints
                     </span>
                 )}
             </div>
@@ -297,42 +322,49 @@ export default function BacklogPage() {
                                     <td style={{ padding: "10px 12px" }}>
                                         <span className={`badge badge-${task.status}`}>{task.status.replace("_", " ")}</span>
                                     </td>
-                                    <td style={{ padding: "10px 12px", fontWeight: 500, cursor: "pointer" }} onClick={() => setEditingTask(task)}>{task.title}</td>
+                                    <td style={{ padding: "10px 12px", fontWeight: 500, cursor: "pointer" }} onClick={() => setEditingTask(task)}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            {task.title}
+                                        </div>
+                                    </td>
                                     <td style={{ padding: "10px 12px" }}>
                                         <span className={`badge badge-${task.priority}`}>{task.priority}</span>
                                     </td>
                                     <td style={{ padding: "10px 12px" }}>
-                                        {(() => {
-                                            const assignee = profiles.find((p: any) => p.id === task.assigneeId);
-                                            return assignee ? (
-                                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                    <img src={assignee.avatarUrl} alt="" style={{ width: 20, height: 20, borderRadius: "50%" }} />
-                                                    <span style={{ fontSize: 12 }}>{assignee.name}</span>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                            {task.assignees && task.assignees.length > 0 && (
+                                                <div style={{ display: "flex" }}>
+                                                    {task.assignees.map((a: any, i: number) => (
+                                                        <img key={a.id} src={a.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${a.name}`} title={a.name} alt={a.name} style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid var(--bg-primary)", marginLeft: i > 0 ? -6 : 0, zIndex: 10 - i }} />
+                                                    ))}
                                                 </div>
-                                            ) : (
-                                                <span style={{ color: "var(--text-tertiary)" }}>—</span>
-                                            );
-                                        })()}
+                                            )}
+                                            <select
+                                                className="form-select"
+                                                style={{ width: "auto", padding: "2px 4px", fontSize: 11, border: "none", background: "transparent", color: "var(--color-indigo)", cursor: "pointer" }}
+                                                value=""
+                                                onChange={(e) => handleUpdateAssignee(task.id, e.target.value)}
+                                            >
+                                                <option value="">+</option>
+                                                {profiles.map((p: any) => (
+                                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </td>
                                     <td style={{ padding: "10px 12px", fontSize: 12 }}>
-                                        {(() => {
-                                            const team = teams.find((t: any) => t.id === task.teamId);
-                                            return team ? (
-                                                <span className="badge" style={{ fontSize: 10, background: "var(--bg-secondary)", border: "1px solid var(--border-light)" }}>{team.name}</span>
-                                            ) : (
-                                                <span style={{ color: "var(--text-tertiary)" }}>—</span>
-                                            );
-                                        })()}
+                                        {task.assignedTeam ? (
+                                            <span className="badge" style={{ fontSize: 10, background: "var(--bg-secondary)", border: "1px solid var(--border-light)" }}>{task.assignedTeam.name}</span>
+                                        ) : (
+                                            <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                                        )}
                                     </td>
                                     <td style={{ padding: "10px 12px", fontSize: 12 }}>
-                                        {(() => {
-                                            const project = projects.find((p: any) => p.id === task.projectId);
-                                            return project ? (
-                                                <span className="badge badge-medium" style={{ fontSize: 10 }}>{project.name}</span>
-                                            ) : (
-                                                <span style={{ color: "var(--text-tertiary)" }}>—</span>
-                                            );
-                                        })()}
+                                        {task.project ? (
+                                            <span className="badge badge-medium" style={{ fontSize: 10 }}>{task.project.name}</span>
+                                        ) : (
+                                            <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                                        )}
                                     </td>
                                     <td style={{ padding: "10px 12px", color: "var(--text-secondary)" }}>
                                         {task.storyPoints || "—"}
@@ -513,7 +545,7 @@ export default function BacklogPage() {
                                         setAiPlanResult(null);
 
                                         try {
-                                            const backlogTasks = tasks.filter((t: any) => !t.sprintId);
+                                            const backlogTasks = tasks.filter((t: any) => !t.sprint);
                                             const response = await fetch("/api/sprints/plan", {
                                                 method: "POST",
                                                 headers: { "Content-Type": "application/json" },

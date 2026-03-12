@@ -17,13 +17,19 @@ export default function GlobalSprintsPage() {
     const [newSprintCapacity, setNewSprintCapacity] = useState("");
     const [newSprintStatus, setNewSprintStatus] = useState("planning");
     const [editingSprint, setEditingSprint] = useState<any>(null);
+    const [sprintToDelete, setSprintToDelete] = useState<any>(null);
 
     const { showToast } = useToast();
 
     const { isLoading, data } = db.useQuery({
-        sprints: {},
-        tasks: {}, // Query tasks to show task counts per sprint and for analysis
-        profiles: {} // For capacity and AI analysis
+        sprints: {
+            project: {}
+        },
+        tasks: {
+            sprint: {},
+            assignees: {}
+        },
+        profiles: {}
     });
 
     const sprints = data?.sprints || [];
@@ -82,11 +88,19 @@ export default function GlobalSprintsPage() {
         setShowCreateModal(true);
     };
 
-    const handleDeleteSprint = (sprintId: string) => {
-        if (confirm("Are you sure you want to delete this sprint? Tasks inside it will NOT be deleted, but they will be returned to the backlog.")) {
-            db.transact([db.tx.sprints[sprintId].delete()]);
-            showToast("Sprint deleted");
-        }
+    const handleDeleteSprint = (sprint: any) => {
+        setSprintToDelete(sprint);
+    };
+
+    const confirmDeleteSprint = () => {
+        if (!sprintToDelete) return;
+
+        db.transact([
+            db.tx.sprints[sprintToDelete.id].delete()
+        ]);
+
+        showToast("Sprint deleted");
+        setSprintToDelete(null);
     };
 
     const handleUpdateStatus = (sprintId: string, newStatus: string) => {
@@ -122,7 +136,7 @@ export default function GlobalSprintsPage() {
             {activeSprint && (
                 <SprintHealthDashboard
                     sprint={activeSprint}
-                    tasks={allTasks.filter((t: any) => t.sprintId === activeSprint?.id)}
+                    tasks={allTasks.filter((t: any) => t.sprint?.id === activeSprint?.id)}
                     profiles={profiles}
                 />
             )}
@@ -162,7 +176,7 @@ export default function GlobalSprintsPage() {
                         </thead>
                         <tbody>
                             {filteredSprints.map((sprint: any) => {
-                                const sprintTasks = allTasks.filter((t: any) => t.sprintId === sprint.id);
+                                const sprintTasks = allTasks.filter((t: any) => t.sprint?.id === sprint.id);
                                 const completedTasks = sprintTasks.filter((t: any) => t.status === "done");
                                 const totalPoints = sprintTasks.reduce((sum: number, t: any) => sum + (t.storyPoints || 0), 0);
 
@@ -198,7 +212,7 @@ export default function GlobalSprintsPage() {
                                             )}
 
                                             <button className="btn btn-ghost btn-sm" onClick={() => openEditModal(sprint)}>Edit</button>
-                                            <button className="btn btn-ghost btn-sm" style={{ color: "#ef4444" }} onClick={() => handleDeleteSprint(sprint.id)}>Delete</button>
+                                            <button className="btn btn-ghost btn-sm" style={{ color: "#ef4444" }} onClick={() => handleDeleteSprint(sprint)}>Delete</button>
 
                                             <Link href={`/sprint-board?sprint=${sprint.id}`} className="btn btn-secondary btn-sm">
                                                 Board
@@ -283,6 +297,29 @@ export default function GlobalSprintsPage() {
                     </div>
                 )
             }
+            {/* Delete Confirmation Modal */}
+            {sprintToDelete && (
+                <div className="modal-overlay" onClick={() => setSprintToDelete(null)}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 style={{ color: "var(--status-testing)" }}>Delete Sprint</h2>
+                            <button className="btn btn-ghost btn-icon" onClick={() => setSprintToDelete(null)}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <p>Are you sure you want to delete <strong>{sprintToDelete.name}</strong>?</p>
+                            <p style={{ marginTop: 12, fontSize: 13, color: "var(--text-secondary)" }}>
+                                Tasks inside this sprint will NOT be deleted, but they will be returned to the backlog.
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setSprintToDelete(null)}>Cancel</button>
+                            <button className="btn btn-primary" style={{ background: "var(--status-testing)", borderColor: "var(--status-testing)" }} onClick={confirmDeleteSprint}>
+                                Delete Sprint
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

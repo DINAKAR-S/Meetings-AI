@@ -14,8 +14,8 @@ export function SprintHealthDashboard({ sprint, tasks, profiles }: { sprint: any
 
     const completedTasks = tasks.filter(t => t.status === "done");
     const blockedTasks = tasks.filter(t => t.status === "blocked");
-    const pointsCompleted = completedTasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
-    const totalPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+    const pointsCompleted = completedTasks.reduce((sum, t) => sum + (t.storyPoints || 3), 0);
+    const totalPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 3), 0);
     const progressPercent = totalPoints > 0 ? Math.round((pointsCompleted / totalPoints) * 100) : 0;
 
     const handleAnalyzeRisk = async () => {

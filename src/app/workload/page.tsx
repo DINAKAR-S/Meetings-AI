@@ -13,12 +13,19 @@ const COLORS = [
     "linear-gradient(90deg, var(--color-teal), var(--color-cyan))",
 ];
 
+const ACTIVE_STATUSES = ["ready", "in_progress", "doing", "review", "testing"];
+const DONE_STATUSES = ["done", "completed"];
+
 export default function WorkloadPage() {
     const [filterProject, setFilterProject] = useState("");
     const [filterSprint, setFilterSprint] = useState("");
 
     const { isLoading, data } = db.useQuery({
-        tasks: {},
+        tasks: {
+            assignees: {},
+            project: {},
+            sprint: {},
+        },
         profiles: {},
         projects: {},
         sprints: {},
@@ -42,19 +49,19 @@ export default function WorkloadPage() {
 
     // Filter tasks by project and sprint
     const filteredTasks = tasks.filter((t: any) => {
-        if (filterProject && t.projectId !== filterProject) return false;
-        if (filterSprint === "__backlog__" && t.sprintId) return false;
-        if (filterSprint && filterSprint !== "__backlog__" && filterSprint !== "all" && t.sprintId !== filterSprint) return false;
+        if (filterProject && t.project?.id !== filterProject) return false;
+        if (filterSprint === "__backlog__" && t.sprint) return false;
+        if (filterSprint && filterSprint !== "__backlog__" && filterSprint !== "all" && t.sprint?.id !== filterSprint) return false;
         return true;
     });
 
     // Per-dev filtered tasks
     const filteredProfiles = profiles.map((profile: any) => {
-        const devTasks = filteredTasks.filter((t: any) => t.assigneeId === profile.id);
+        const devTasks = filteredTasks.filter((t: any) => t.assignees?.some((a: any) => a.id === profile.id));
         return { ...profile, filteredTasks: devTasks };
     }).sort((a: any, b: any) => (b.filteredTasks?.length || 0) - (a.filteredTasks?.length || 0));
 
-    const unassignedTasks = filteredTasks.filter((t: any) => !t.assigneeId);
+    const unassignedTasks = filteredTasks.filter((t: any) => !t.assignees || t.assignees.length === 0);
     const activeSprintName = filterSprint ? sprints.find((s: any) => s.id === filterSprint)?.name : null;
 
     return (
@@ -150,8 +157,8 @@ export default function WorkloadPage() {
                     <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                         {filteredProfiles.map((profile: any, idx: number) => {
                             const devTasks = profile.filteredTasks || [];
-                            const done = devTasks.filter((t: any) => t.status === "done").length;
-                            const inProgress = devTasks.filter((t: any) => t.status === "in_progress").length;
+                            const done = devTasks.filter((t: any) => DONE_STATUSES.includes(t.status)).length;
+                            const active = devTasks.filter((t: any) => ACTIVE_STATUSES.includes(t.status)).length;
                             const critical = devTasks.filter((t: any) => t.priority === "critical").length;
 
                             const assignedPoints = devTasks.reduce((sum: number, t: any) => sum + (t.storyPoints || 3), 0);
@@ -171,7 +178,7 @@ export default function WorkloadPage() {
                                             <div>
                                                 <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{profile.name}</div>
                                                 <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                                                    {devTasks.length} total • {done} done • {inProgress} active
+                                                    {devTasks.length} total • {done} done • {active} active
                                                     {critical > 0 && <span style={{ color: "#ef4444" }}> • {critical} critical</span>}
                                                 </div>
                                             </div>
@@ -205,8 +212,8 @@ export default function WorkloadPage() {
                     {filteredProfiles.map((profile: any) => {
                         const devTasks = profile.filteredTasks || [];
 
-                        const highWip = devTasks.filter((t: any) => t.status === "in_progress").length > 3;
-                        const hasCritical = devTasks.filter((t: any) => t.priority === "critical").length > 0;
+                        const highWip = devTasks.filter((t: any) => ACTIVE_STATUSES.includes(t.status)).length > 5;
+                        const hasCritical = devTasks.filter((t: any) => t.priority === "critical" && ACTIVE_STATUSES.includes(t.status)).length > 0;
                         const assignedPoints = devTasks.reduce((sum: number, t: any) => sum + (t.storyPoints || 3), 0);
                         const overCapacity = profile.capacity ? assignedPoints > profile.capacity : false;
 

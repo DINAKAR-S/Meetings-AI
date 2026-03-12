@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import CommandPalette from "@/components/CommandPalette";
 
 import { ToastProvider } from "@/components/Toast";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <ToastProvider>
+          <CommandPalette />
           <div className="app-layout">
             <Sidebar />
             <main className="main-content">
