@@ -32,7 +32,7 @@ export function AssistantSidebar({ sessions, activeSessionId, onSelectSession, o
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 0" }}>
-                <div style={{ px: 20, mb: 12, fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, padding: "0 20px" }}>
+                <div style={{ marginBottom: 12, fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, padding: "0 20px" }}>
                     Recent Conversations
                 </div>
                 {sortedSessions.length === 0 ? (
