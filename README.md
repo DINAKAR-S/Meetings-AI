@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI-Powered Meeting & Sprint Manager
 
-## Getting Started
+A premium, real-time platform for managing meetings, sprints, and team workloads with AI assistance. Built with **Next.js 15**, **InstantDB**, and **OpenAI**.
 
-First, run the development server:
+![Project Showcase](https://raw.githubusercontent.com/DINAKAR-S/Meetings-AI/main/public/showcase-placeholder.png)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🚀 Key Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **AI Sprint Planning**: Automatically generate sprint plans and distribute tasks based on team capacity.
+- **Real-time Collaboration**: Instant synchronization across all users using InstantDB's graph-based local-first architecture.
+- **Intelligent Backlog**: Organize tasks with a powerful drag-and-drop interface and AI-driven prioritization.
+- **Sprint Health Dashboard**: Visualize project progress, workload distribution, and team velocity at a glance.
+- **Meeting Management**: Integrated tools for tracking meetings and action items.
+- **Command Palette**: Quick navigation and action execution with `Ctrl+K`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework**: [Next.js 15 (App Router)](https://nextjs.org/)
+- **Database**: [InstantDB](https://instantdb.com/) (Graph-based, Real-time)
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/) & Framer Motion
+- **AI**: [OpenAI API](https://openai.com/)
+- **Icons**: [Lucide React](https://lucide.dev/)
+- **Drag & Drop**: [@dnd-kit](https://dndkit.com/)
 
-## Learn More
+## 🏁 Getting Started
 
-To learn more about Next.js, take a look at the following resources:
+### Prerequisites
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Node.js 20+
+- An InstantDB App ID
+- An OpenAI API Key
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Installation
 
-## Deploy on Vercel
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/DINAKAR-S/Meetings-AI.git
+   cd meetings
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **Set up environment variables**:
+   Create a `.env.local` file in the root directory:
+   ```env
+   NEXT_PUBLIC_INSTANT_APP_ID=your_instant_app_id
+   OPENAI_API_KEY=your_openai_api_key
+   ```
+
+4. **Run the development server**:
+   ```bash
+   npm run dev
+   ```
+
+## 📂 Project Structure
+
+- `src/app`: Next.js App Router pages and API routes.
+- `src/components`: Reusable UI components (Sprint boards, AI widgets, Sidebars).
+- `src/lib`: Utility functions and shared logic.
+- `src/instant.schema.ts`: Database schema definitions for InstantDB.
+
+## 📄 License
+
+This project is private and intended for internal use.
+
+---
+
+Built with ❤️ by [Dinakar](https://github.com/DINAKAR-S)
