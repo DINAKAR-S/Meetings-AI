@@ -2,7 +2,7 @@
 
 A premium, real-time platform for managing meetings, sprints, and team workloads with AI assistance. Built with **Next.js 15**, **InstantDB**, and **OpenAI**.
 
-![Project Showcase]([https://raw.githubusercontent.com/DINAKAR-S/Meetings-AI/main/public/showcase-placeholder.png](https://github.com/DINAKAR-S/Meetings-AI/blob/main/dashboard.png))
+![Project Showcase](https://github.com/DINAKAR-S/Meetings-AI/blob/main/dashboard.png)
 
 ## 🚀 Key Features
 
